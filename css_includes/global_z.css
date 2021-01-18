@@ -1,0 +1,9 @@
+div {
+    max-width: 650px;
+}
+.DashedSentence-sentence {
+    background-color: white;
+    clear: both;
+    max-width: 600px;
+    font-size: large;
+}

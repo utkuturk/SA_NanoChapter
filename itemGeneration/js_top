@@ -1,0 +1,74 @@
+
+define_ibex_controller({
+      name: "MyPractice",
+
+	  jqueryWidget: {
+	      _init: function () {
+		        this.options.transfer = null;
+		        this.element.VBox({
+			          options: this.options,
+			          triggers: [1],
+			          padding: "1em",
+			          children: [
+				            "Message", this.options,
+      				      "AcceptabilityJudgment", this.options
+                ]
+                  });
+          }
+      },
+
+      properties: { }
+});
+var exp = seq("practice", "startexp", sepWith("sep", seq(rshuffle(startsWith("target"), anyOf(startsWith("filler"), startsWith("control"))))));
+var shuffleSequence = seq("intro","instructions", exp, "sr", "end");
+var practiceItemTypes = ["practice"];
+
+var defaults = [
+    "Separator", {
+        transfer: 1000,
+        normalMessage: "Bir sonraki cümle için bekleyiniz.",
+        errorMessage: "Yanlış cevap. Bir sonraki cümle için bekleyiniz.",
+        ignoreFailure: true
+    },
+    "AcceptabilityJudgment", {
+        as: ["1", "2", "3", "4", "5"],
+        q: "Bu cümle kulağınıza nasıl gelmektedir?",
+        leftComment: "(çok kötü)", rightComment: "(çok doğal)",
+        presentAsScale: true
+    },
+    "Message", {
+        hideProgressBar: true
+    },
+
+    "Question", {
+        hasCorrect: true
+    },
+    "Form", {
+        hideProgressBar: true,
+        continueOnReturn: true,
+        saveReactionTime: true
+    }
+];
+
+var manualSendResults = true;
+
+var items = [
+
+    ["sr", "__SendResults__", { }],
+
+    ["sep", "Separator", { }],
+
+
+    ["intro", "Form", {html: { include: "intro.html" }}],
+    ["instructions", "Message", {html: { include: "instructions.html" }}],
+    ["startexp", "Message", {html: "Deneme cümleleri bitmiştir, artık deneye başlayabilirsiniz."}],
+    ["end", "Message", {html: { include: "end.html" }, transfer: null}],
+
+    ["practice", "MyPractice", {html: "<div style=\"text-align: center;font-style: italic;\">Aşağıdaki ölçekten cümlenin ne kadar doğal olduğunu seçiniz.</div>", s: "Daha dün annemizin kollarında yaşıyorduk."},
+     "Message", {html: "Bazı cümleler biraz garip olabilir."}],
+
+
+    ["practice", "MyPractice", {html: "<div style=\"text-align: center;font-style: italic;\">Aşağıdaki ölçekten cümlenin ne kadar doğal olduğunu seçiniz.</div>", s: "Gaviscon çok etkili bir ilaç değil gelmiş."}],
+
+
+
