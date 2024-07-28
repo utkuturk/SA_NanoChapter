@@ -13,6 +13,7 @@ library(cowplot)
 library(bayesplot)
 library(ggsci)
 library(cmdstanr)
+library(scales)
 
 # function
 se_cousineau <- function(df, n_conditions, subject, DV, group, is_proportion = NULL) {
@@ -194,24 +195,18 @@ avg_clean$rt <- results %>%
       is_proportion = FALSE
     )
   })
-
-avg_clean$rt_correct <- results %>%
-  subset(ResponseCorrect) %>%
-  plyr::ddply(c("type"), function(df) {
-    df %>% se_cousineau(
-      n_conditions = 4, results_index, DV = time_taken_to_answer,
-      group = c("no_sa", "vowel_match_conj"),
-      is_proportion = FALSE
-    )
-  })
 avg_clean$resp$CI = avg_clean$resp$SE * 1.96
 # desc plot
-p_avg =
-avg_clean$resp %>%
+
+avg_clean$resp$err <- 1-avg_clean$resp$M
+
+err <- round(avg_clean$resp$err[3], 2)
+
+p_avg = 
+  avg_clean$resp %>%
   ggplot(aes(rev(no_sa), M,
-    color = vowel_match_conj,
-    group = vowel_match_conj
-  )) +
+             linetype = vowel_match_conj,
+             group = vowel_match_conj)) +
   geom_point(size = 3) +
   geom_line(linewidth = 1) +
   geom_errorbar(
@@ -221,20 +216,60 @@ avg_clean$resp %>%
     ),
     width = 0.2, linewidth = 1
   ) +
+  geom_rect(aes(
+    xmin = -Inf,
+    xmax = Inf,
+    ymin = 0.5,
+    ymax = 0.7
+  ),color = "lightgray",  fill = "gray", alpha = 0.2) +
   xlab("") +
   ylab("Percentage 'yes'") +
-  scale_y_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), breaks = seq(0.5, 1, by = 0.1), limits = c(0.5, 1)) +
   scale_x_discrete(
-    #name = "\nParticipants",
     labels = c("No Susp. Affix.", "Susp. Affix.")
   ) +
-  scale_color_lancet(
+  scale_linetype_manual(
     name = "Conjoiner",
-    labels = c("Vowel Mismatching\nOR (ya da)", "Vowel Matching\nAND (ve)")
+    values = c("dashed", "solid"),
+    labels = c("Non-harmonizing\nOR (ya da)", "Harmonizing\nAND (ve)")
   ) +
   theme_classic() +
-  theme(text = element_text(size = 16, family = "Times"))
-ggsave("avgs.png", plot = p_avg, device = "png", dpi = "retina", width = 8, height = 5)
+  theme(text = element_text(size = 16, family = "Times"), legend.key.size = unit(2, "cm",)) + 
+    guides(linetype = guide_legend(override.aes = list(fill = "white")))
+
+
+
+
+
+# p_avg =
+# avg_clean$resp %>%
+#   ggplot(aes(rev(no_sa), M,
+#     color = vowel_match_conj,
+#     group = vowel_match_conj
+#   )) +
+#   geom_point(size = 3) +
+#   geom_line(linewidth = 1) +
+#   geom_errorbar(
+#     aes(
+#       ymin = M - 1.96 * SE,
+#       ymax = M + 1.96 * SE
+#     ),
+#     width = 0.2, linewidth = 1
+#   ) +
+#   xlab("") +
+#   ylab("Percentage 'yes'") +
+#   scale_y_continuous(labels = scales::percent) +
+#   scale_x_discrete(
+#     #name = "\nParticipants",
+#     labels = c("No Susp. Affix.", "Susp. Affix.")
+#   ) +
+#   scale_color_lancet(
+#     name = "Conjoiner",
+#     labels = c("Vowel Mismatching\nOR (ya da)", "Vowel Matching\nAND (ve)")
+#   ) +
+#   theme_classic() +
+#   theme(text = element_text(size = 16, family = "Times"))
+ggsave("avgs.png", plot = p_avg, device = "png", dpi = "retina", width = 10, height = 5)
 
 # avg_by_item <- results %>%
 #   group_by(group, type, no_sa, vowel_match_conj) %>%
@@ -252,8 +287,13 @@ ggsave("avgs.png", plot = p_avg, device = "png", dpi = "retina", width = 8, heig
 #          delta_dat = condition_datve - condition_datyada,
 #          delta_nosa = condition_ve - condition_yada)
 
-results$c_sa <- ifelse(results$no_sa == 0, .5, -.5)
-results$c_mismatch <- ifelse(results$vowel_match_conj == 0, .5, -.5)
+# Convert predictors to factors if they are not already
+results$no_sa <- as.factor(results$no_sa)
+results$vowel_match_conj <- as.factor(results$vowel_match_conj)
+
+# Set up contrast coding for the predictors
+contrasts(results$no_sa) <- (contr.sum(2) / 2)
+contrasts(results$vowel_match_conj) <- (contr.sum(2) / 2) *-1
 
 myprior <- c(
   set_prior("normal(0,1)", class = "Intercept"),
@@ -263,17 +303,86 @@ myprior <- c(
 )
 
 model <- brm(
-  formula = response_yes ~ c_sa * c_mismatch + (c_sa * c_mismatch | results_index) + (c_sa * c_mismatch | group),
+  formula = response_yes ~ no_sa * vowel_match_conj + (no_sa * vowel_match_conj | results_index) + (no_sa * vowel_match_conj | group),
   data = results,
   family = bernoulli("logit"),
   prior = myprior,
   chains = 4, cores = 4,
   warmup = 2000, iter = 8000,
-  control = list(adapt_delta = 0.9),
-  backend = "cmdstanr",
-  stan_model_args = list(stanc_options = list("O1")),
   file = "./response_yes.rds"
 )
+
+# Extract posterior samples
+post <- posterior_samples(model)
+
+# Compute the probability for predictor x
+prob_x <- mean(plogis(post$b_no_sa1) > 0.7)
+
+# Compute the probability for predictor y
+prob_y <- mean(plogis(post$b_vowel_match_conj1) > 0.7)
+
+
+
+######
+
+# Extract posterior samples
+posterior_samples <- as_draws_df(model)
+
+# Calculate probabilities for each combination of predictors
+# Define the possible conditions
+conditions <- expand.grid(
+  no_sa = c(-0.5, 0.5),
+  vowel_match_conj = c(-0.5, 0.5)
+)
+
+
+# Define hypotheses for each condition
+hypothesis1 <- hypothesis(
+  model,
+  "Intercept + no_sa1 * -0.5 + vowel_match_conj1 * -0.5 + no_sa1:vowel_match_conj1 * (-0.5 * -0.5) > logit(0.7)"
+)
+
+hypothesis2 <- hypothesis(
+  model,
+  "Intercept + no_sa1 * 0.5 + vowel_match_conj1 * -0.5 + no_sa1:vowel_match_conj1 * (0.5 * -0.5) > logit(0.7)"
+)
+
+hypothesis3 <- hypothesis(
+  model,
+  "Intercept + no_sa1 * -0.5 + vowel_match_conj1 * 0.5 + no_sa1:vowel_match_conj1 * (-0.5 * 0.5) > logit(0.7)"
+)
+
+hypothesis4 <- hypothesis(
+  model,
+  "Intercept + no_sa1 * 0.5 + vowel_match_conj1 * 0.5 + no_sa1:vowel_match_conj1 * (0.5 * 0.5) > logit(0.7)"
+)
+
+# Initialize a dataframe to store the probabilities and hypotheses results
+results_table <- data.frame(conditions)
+results_table$prob <- NA
+results_table$evidence_ratio <- NA
+
+# Extract the probability and evidence ratio for each hypothesis
+results_table$prob[1] <- plogis(hypothesis1$hypothesis$Estimate)
+results_table$evidence_ratio[1] <- hypothesis1$hypothesis[1, "Evid.Ratio"]
+
+results_table$prob[2] <- plogis(hypothesis2$hypothesis$Estimate)
+results_table$evidence_ratio[2] <- hypothesis2$hypothesis[1, "Evid.Ratio"]
+
+results_table$prob[3] <- plogis(hypothesis3$hypothesis$Estimate)
+results_table$evidence_ratio[3] <- hypothesis3$hypothesis[1, "Evid.Ratio"]
+
+results_table$prob[4] <- plogis(hypothesis4$hypothesis$Estimate)
+results_table$evidence_ratio[4] <- hypothesis4$hypothesis[1, "Evid.Ratio"]
+
+# Print the results
+print(results_table)
+
+####
+
+# Define and test hypothesis
+hypothesis_test <- hypothesis(model, paste0("plogis(", mean(logit), ") > 0.7"))
+results$hypothesis[i] <- hypothesis_test$hypothesis[1, "Evid.Ratio"]
 
 model_summary(model)
 
